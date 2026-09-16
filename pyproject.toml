@@ -1,0 +1,16 @@
+[project]
+name = "m-cli"
+version = "0.1.0"
+description = "a tiny personal cli for turning long commands into short ones"
+requires-python = ">=3.8"
+readme = "README.md"
+
+[project.scripts]
+m = "m_cli.cli:main"
+
+[tool.setuptools]
+packages = ["m_cli"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
