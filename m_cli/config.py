@@ -11,8 +11,9 @@ DEFAULT_COMMANDS = {
         "run": ["docker compose down", "git pull", "docker compose up -d"],
     },
     "boot": {
-        "description": "push boot.py to a connected micropython board",
-        "run": "mpremote resume fs cp boot.py :boot.py",
+        "description": "push a file to a connected micropython board",
+        "run": "mpremote resume fs cp {file} :{file}",
+        "args": {"file": "boot.py"},
     },
 }
 
@@ -42,3 +43,25 @@ def save_commands(commands: dict) -> None:
     path = config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(commands, indent=2) + "\n", encoding="utf-8")
+
+
+def app_config_path() -> Path:
+    return config_dir() / "sync.json"
+
+
+def load_app_config() -> dict:
+    path = app_config_path()
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_app_config(data: dict) -> None:
+    path = app_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    if sys.platform != "win32":
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
