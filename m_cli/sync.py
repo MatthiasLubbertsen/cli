@@ -1,10 +1,14 @@
 import json
+import os
 import urllib.error
 import urllib.request
 
-API = "https://api.github.com"
+# overridable so the sync code can be tested against a local fake server
+API = os.environ.get("M_GITHUB_API", "https://api.github.com")
 GIST_FILENAME = "m-commands.json"
 GIST_DESCRIPTION = "m cli - synced commands (do not rename the file inside this gist)"
+THEME_FILENAME = "theme.omp.json"
+THEME_DESCRIPTION = "m cli - oh-my-posh theme (do not rename the file inside this gist)"
 
 
 def _request(method, path, token, body=None):
@@ -23,32 +27,39 @@ def _request(method, path, token, body=None):
         raise RuntimeError(f"github api error {e.code}: {detail}") from e
 
 
-def find_gist_id(token):
+def find_gist_id(token, filename=GIST_FILENAME):
     page = 1
     while True:
         gists = _request("GET", f"/gists?per_page=100&page={page}", token)
         if not gists:
             return None
         for g in gists:
-            if GIST_FILENAME in g.get("files", {}):
+            if filename in g.get("files", {}):
                 return g["id"]
         page += 1
 
 
-def create_gist(token, content):
+def create_gist(token, content, filename=GIST_FILENAME, description=GIST_DESCRIPTION):
     body = {
-        "description": GIST_DESCRIPTION,
+        "description": description,
         "public": False,
-        "files": {GIST_FILENAME: {"content": content}},
+        "files": {filename: {"content": content}},
     }
     return _request("POST", "/gists", token, body)["id"]
 
 
-def push(token, gist_id, content):
-    body = {"files": {GIST_FILENAME: {"content": content}}}
+def push(token, gist_id, content, filename=GIST_FILENAME):
+    body = {"files": {filename: {"content": content}}}
     _request("PATCH", f"/gists/{gist_id}", token, body)
 
 
-def pull(token, gist_id):
+def pull(token, gist_id, filename=GIST_FILENAME):
     result = _request("GET", f"/gists/{gist_id}", token)
-    return result["files"][GIST_FILENAME]["content"]
+    return result["files"][filename]["content"]
+
+
+def raw_url(token, gist_id, filename):
+    """Link that always serves the latest version of the file, no token needed
+    (secret gists are readable by anyone who has the link)."""
+    owner = _request("GET", f"/gists/{gist_id}", token)["owner"]["login"]
+    return f"https://gist.githubusercontent.com/{owner}/{gist_id}/raw/{filename}"

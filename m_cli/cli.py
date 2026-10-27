@@ -7,11 +7,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import config, sync
+from . import config, sync, theme
 
 BUILTINS = {
     "list", "add", "remove", "edit", "where",
-    "push", "pull", "update", "help", "-h", "--help",
+    "push", "pull", "update", "theme", "help", "-h", "--help",
 }
 
 
@@ -194,6 +194,87 @@ def cmd_pull():
     print(f"pulled {len(new_commands)} command(s) from https://gist.github.com/{gist_id}")
 
 
+def cmd_theme(args):
+    if args and args[0] == "push":
+        cmd_theme_push()
+        return
+    if args and args[0] == "pull":
+        cmd_theme_pull()
+        return
+    try:
+        print(theme.run(args))
+    except theme.ThemeError as e:
+        print(str(e))
+        sys.exit(1)
+    print()
+    print("reload your prompt to see it: `. $PROFILE` (powershell) or `exec bash -l` (bash)")
+
+
+def cmd_theme_push():
+    path = theme.theme_path()
+    if not path.exists():
+        print(f"no theme file at {path}. run `m theme` first.")
+        sys.exit(1)
+    content = path.read_text(encoding="utf-8-sig")
+    try:
+        json.loads(content)
+    except ValueError:
+        print(f"{path} isn't valid json, not pushing it")
+        sys.exit(1)
+
+    app_cfg = config.load_app_config()
+    try:
+        token = get_token(app_cfg)
+        gist_id = app_cfg.get("theme_gist_id") or sync.find_gist_id(token, sync.THEME_FILENAME)
+        if gist_id:
+            sync.push(token, gist_id, content, sync.THEME_FILENAME)
+        else:
+            gist_id = sync.create_gist(token, content, sync.THEME_FILENAME, sync.THEME_DESCRIPTION)
+        if app_cfg.get("theme_gist_id") != gist_id:
+            app_cfg["theme_gist_id"] = gist_id
+            config.save_app_config(app_cfg)
+        raw = sync.raw_url(token, gist_id, sync.THEME_FILENAME)
+    except UsageError as e:
+        print(str(e))
+        sys.exit(1)
+    except Exception as e:
+        print(f"theme push failed: {e}")
+        sys.exit(1)
+
+    print(f"pushed {path.name} to https://gist.github.com/{gist_id}")
+    print("on a server without m, this fetches the latest version:")
+    print(f"  curl -fsSL -o ~/theme.omp.json {raw}")
+
+
+def cmd_theme_pull():
+    app_cfg = config.load_app_config()
+    try:
+        token = get_token(app_cfg)
+        gist_id = app_cfg.get("theme_gist_id") or sync.find_gist_id(token, sync.THEME_FILENAME)
+    except UsageError as e:
+        print(str(e))
+        sys.exit(1)
+    except Exception as e:
+        print(f"theme pull failed: {e}")
+        sys.exit(1)
+    if not gist_id:
+        print("no synced theme found yet. run `m theme push` on the machine that has it.")
+        sys.exit(1)
+    if app_cfg.get("theme_gist_id") != gist_id:
+        app_cfg["theme_gist_id"] = gist_id
+        config.save_app_config(app_cfg)
+    try:
+        content = sync.pull(token, gist_id, sync.THEME_FILENAME)
+        json.loads(content)
+    except Exception as e:
+        print(f"theme pull failed: {e}")
+        sys.exit(1)
+    path = theme.theme_path()
+    theme.write_theme(path, content)
+    print(f"pulled theme from https://gist.github.com/{gist_id} to {path}")
+    print("reload your prompt to see it: `. $PROFILE` (powershell) or `exec bash -l` (bash)")
+
+
 def cmd_update():
     repo_root = Path(__file__).resolve().parent.parent
     if not (repo_root / ".git").exists():
@@ -234,6 +315,9 @@ def print_help():
     print("  m push            sync your commands up to a private github gist")
     print("  m pull            sync your commands down from that gist")
     print("  m update          pull the latest m code (needs a git install) and reinstall")
+    print("  m theme [name]    build your oh-my-posh theme (plain chars, short name, accent color)")
+    print("  m theme push      sync the built theme up to a private github gist")
+    print("  m theme pull      sync the theme down from that gist")
 
 
 def main():
@@ -275,6 +359,9 @@ def main():
         return
     if name == "update":
         cmd_update()
+        return
+    if name == "theme":
+        cmd_theme(rest)
         return
 
     if name not in commands:
